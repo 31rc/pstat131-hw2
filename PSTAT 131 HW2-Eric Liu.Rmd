@@ -1,0 +1,107 @@
+---
+title: "PSTAT 131 HW2"
+author: "Eric Liu"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+data <- read_csv(file = "data/abalone.csv")
+head(data)
+```
+
+### Question 1
+
+```{r q1}
+data$age = data$rings + 1.5
+head(data)
+```
+```{r q1plots}
+library(ggplot2)
+library(corrplot)
+
+ggplot(data) + geom_histogram(mapping = aes(x=age), binwidth = 1)
+
+data %>% 
+  select(is.numeric) %>% 
+  cor() %>% 
+  corrplot(method = "number", type = "lower")
+```
+
+From the histogram, we can see that most abalones have age in 8-12 years, and ten years old abalones are the most. In addition, from the correlation plot, we can see that age is positively correlated with all other numeric variables, and the correlation magnitude with each variable is very close. Among them except rings, shell weight is the most positively correlated, and shucked weight is the least positively correlated. 
+
+### Question 2
+
+```{r q2}
+set.seed(0)
+
+data_split <- initial_split(data, prop = 0.8, strata = age)
+
+data_train <- training(data_split)
+data_test <- testing(data_split)
+```
+
+### Question 3
+
+```{r q3}
+data_recipe <- 
+  recipe(age ~ ., data = data_train) %>%
+  update_role(rings, new_role = "rings") %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_interact(terms = ~ type_M:shucked_weight) %>%
+  step_interact(terms = ~ longest_shell:diameter) %>%
+  step_interact(terms = ~ shucked_weight:shell_weight) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors())
+
+summary(data_recipe)
+```
+
+We shouldn't use rings to predict age. Since rings plus 1.5 gives age, rings can be seen as the outcome, so we cannot use the outcome as predictor to predict the outcome. In addition, based on the context of this dataset, we want to find a way to obtained age without knowing rings. Therefore, I used update_role function to make rings not predictor. 
+
+### Question 4
+
+```{r q4}
+lm_model <- linear_reg() %>% 
+  set_engine("lm")
+```
+
+### Question 5
+
+```{r q5}
+lm_workflow <- workflow() %>%
+  add_model(lm_model) %>%
+  add_recipe(data_recipe)
+
+lm_fit <- fit(lm_workflow, data_train)
+
+tidy(lm_fit)
+```
+
+### Question 6
+
+```{r q6}
+data_point = data.frame(type="F", longest_shell=0.5, diameter=0.1, height=0.3, whole_weight=4, shucked_weight=1, viscera_weight=2, shell_weight=1, rings = 0)
+
+predict(lm_fit, data_point)
+```
+
+### Question 7
+
+```{r q7}
+library(yardstick)
+data_metrics <- metric_set(rsq, rmse, mae)
+
+data_train_res <- predict(lm_fit, new_data = data_train %>% select(-age))
+data_train_res <- bind_cols(data_train_res, data_train %>% select(age))
+
+data_metrics(data_train_res, truth = age, estimate = .pred)
+```
+
+The obtained $R^2$ is 0.555, RMSE is 2.18, and MAE is 1.57. \
+$R^2$ measures the proportion of variability in the outcome that can be explained by the regression. The obtained $R^2$ is 0.555, which indicates that the trained linear regression model explains 55.5% of the variability in the outcome of the training data. 
